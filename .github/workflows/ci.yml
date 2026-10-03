@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  pre-commit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # Fetch all history for proper diff comparison
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install pre-commit
+        run: pip install pre-commit==4.6.2
+
+      - name: Cache pre-commit environments
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Run pre-commit hooks on changed files
+        if: github.event_name == 'pull_request'
+        run: pre-commit run --from-ref origin/${{ github.base_ref }} --to-ref HEAD
+
+      - name: Run pre-commit hooks on all files
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: pre-commit run --all-files
+
+  tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [modules/camera_processor, modules/viewer]
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The device runs Python 3.10.
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.10"
+
+      # opencv-python loads libGL, which a runner has no reason to install.
+      - name: Install system libraries
+        if: matrix.module == 'modules/camera_processor'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgl1 libglib2.0-0
+
+      # Dependency groups need pip 25.1 or later.
+      - name: Install test dependencies
+        run: python -m pip install pip==25.3 && pip install --group test
+
+      - name: Run tests
+        run: python -m pytest -q

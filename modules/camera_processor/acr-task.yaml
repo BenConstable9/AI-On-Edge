@@ -1,0 +1,18 @@
+# ACR Tasks run for the camera-processor image. The build scripts call it with
+#   az acr run --platform linux/amd64 --set tag=<tag> -f acr-task.yaml .
+# Step 1 exports the detector on amd64 into the shared workspace. Step 2 builds
+# the arm64 device image, which copies the exported files in.
+version: v1.1.0
+steps:
+  - id: export-image
+    build: -t camera-processor-export:{{.Run.ID}} -f export.Dockerfile .
+  - id: export
+    cmd: camera-processor-export:{{.Run.ID}} --variant small --output /workspace/detector
+    timeout: 1800
+  - id: device-image
+    build: -t {{.Run.Registry}}/camera-processor:{{.Values.tag}} --platform linux/arm64 -f Dockerfile .
+    timeout: 3600
+  # The first push uploads the 8.5 GB base. The default 10 minutes is not enough.
+  - push:
+      - "{{.Run.Registry}}/camera-processor:{{.Values.tag}}"
+    timeout: 3600

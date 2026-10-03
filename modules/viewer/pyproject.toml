@@ -1,0 +1,27 @@
+[project]
+name = "viewer"
+version = "0.2.0"
+description = "Shows the camera module's preview and counts from a device on the local network"
+requires-python = ">=3.10"
+# Standard library only, so it installs on a laptop with no package index.
+dependencies = []
+
+[dependency-groups]
+test = ["pytest==9.1.1"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+viewer = ["static/*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
