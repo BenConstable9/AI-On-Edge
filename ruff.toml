@@ -1,0 +1,10 @@
+# One ruff configuration for every Python package in the repository. The
+# pyproject.toml files hold no [tool.ruff] section, so ruff finds this file.
+line-length = 120
+target-version = "py310"
+
+[lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[lint.isort]
+known-first-party = ["camera_processor", "viewer"]

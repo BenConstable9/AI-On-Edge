@@ -1,0 +1,114 @@
+{
+  "$schema-template": "4.0.0",
+  "modulesContent": {
+    "$edgeAgent": {
+      "properties.desired": {
+        "schemaVersion": "1.1",
+        "runtime": {
+          "type": "docker",
+          "settings": {
+            "minDockerVersion": "v1.25",
+            "loggingOptions": "",
+            "registryCredentials": {
+              "acr": {
+                "username": "$CONTAINER_REGISTRY_USERNAME",
+                "password": "$CONTAINER_REGISTRY_PASSWORD",
+                "address": "$CONTAINER_REGISTRY_SERVER"
+              }
+            }
+          }
+        },
+        "systemModules": {
+          "edgeAgent": {
+            "type": "docker",
+            "settings": {
+              "image": "mcr.microsoft.com/azureiotedge-agent:1.6",
+              "createOptions": "{}"
+            }
+          },
+          "edgeHub": {
+            "type": "docker",
+            "status": "running",
+            "restartPolicy": "always",
+            "settings": {
+              "image": "mcr.microsoft.com/azureiotedge-hub:1.6",
+              "createOptions": "{\"HostConfig\":{\"PortBindings\":{\"5671/tcp\":[{\"HostPort\":\"5671\"}],\"8883/tcp\":[{\"HostPort\":\"8883\"}]}}}"
+            }
+          }
+        },
+        "modules": {
+          "vllm": {
+            "version": "1.0",
+            "type": "docker",
+            "status": "running",
+            "restartPolicy": "always",
+            "startupOrder": 10,
+            "env": {
+              "VLLM_MAX_MODEL_LEN": {
+                "value": "1024"
+              },
+              "VLLM_KV_CACHE_BYTES": {
+                "value": "268435456"
+              },
+              "VLLM_GPU_MEMORY_UTILIZATION": {
+                "value": "0.40"
+              }
+            },
+            "settings": {
+              "image": "$CONTAINER_REGISTRY_SERVER/vllm:$VLLM_TAG",
+              "createOptions": "{\"HostConfig\":{\"Runtime\":\"nvidia\",\"Binds\":[\"edge-models:/models\",\"/dev/shm/edgeframes:/shm\"],\"NetworkMode\":\"azure-iot-edge\",\"ShmSize\":2147483648,\"Ulimits\":[{\"Name\":\"memlock\",\"Soft\":-1,\"Hard\":-1},{\"Name\":\"stack\",\"Soft\":67108864,\"Hard\":67108864}]},\"NetworkingConfig\":{\"EndpointsConfig\":{\"azure-iot-edge\":{\"Aliases\":[\"vllm\"]}}}}"
+            }
+          },
+          "cameraprocessor": {
+            "version": "1.0",
+            "type": "docker",
+            "status": "running",
+            "restartPolicy": "always",
+            "startupOrder": 20,
+            "env": {
+              "VLLM_BASE_URL": {
+                "value": "http://vllm:8001"
+              },
+              "SERVED_MODEL_NAME": {
+                "value": "qwen3-vl-4b"
+              },
+              "CAMERA_SOURCE": {
+                "value": "auto"
+              },
+              "CAMERA_DEVICE_DIR": {
+                "value": "/hostdev"
+              },
+              "CAPTURE_WIDTH": {
+                "value": "1280"
+              },
+              "CAPTURE_HEIGHT": {
+                "value": "720"
+              },
+              "PREVIEW_WIDTH": {
+                "value": "960"
+              },
+              "MJPEG_ENABLED": {
+                "value": "1"
+              }
+            },
+            "settings": {
+              "image": "$CONTAINER_REGISTRY_SERVER/camera-processor:$CAMERA_TAG",
+              "createOptions": "{\"HostConfig\":{\"Runtime\":\"nvidia\",\"Binds\":[\"/dev/shm/edgeframes:/shm\",\"/dev:/hostdev:ro\"],\"DeviceCgroupRules\":[\"c 81:* rmw\"],\"PortBindings\":{\"8090/tcp\":[{\"HostPort\":\"8090\"}]},\"NetworkMode\":\"azure-iot-edge\"}}"
+            }
+          }
+        }
+      }
+    },
+    "$edgeHub": {
+      "properties.desired": {
+        "schemaVersion": "1.2",
+        "routes": {
+          "telemetryToCloud": "FROM /messages/modules/cameraprocessor/outputs/telemetry INTO $upstream"
+        },
+        "storeAndForwardConfiguration": {
+          "timeToLiveSecs": 7200
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,9 @@
+# Keeps local development artefacts out of the build context and the image.
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+*.log
+.env

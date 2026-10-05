@@ -8,3 +8,35 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Rendered IoT Edge manifest — contains registry secrets.
+# The template it is generated from IS tracked.
+deployment/deployment.generated.json
+deployment.edge.json
+
+# Auto-generated environment files
+environment.yml
+
+.env
+.env.bak*
+
+# Device credentials — never commit
+jetson.txt
+*.pem
+*.key
+id_rsa*
+
+# Scratch output from local investigation
+*.log
+*.err
+
+# Local agent instructions
+.github/copilot-instructions.md
+# Vendor datasheets and reference docs (re-downloadable, not ours to redistribute)
+*.pdf
+
+# Local archives
+*.zip
+
+# Detector export output, made inside the ACR build
+modules/camera_processor/detector/

@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI on the edge</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #0b0d10;
+    --surface: #12151a;
+    --raised: #191d23;
+    --border: rgba(255, 255, 255, 0.07);
+    --border-strong: rgba(255, 255, 255, 0.16);
+    --text: #e6e8eb;
+    --muted: #8b939e;
+    --faint: #5d646e;
+    --live: #3fb950;
+    --down: #f85149;
+    --changed: #d6a54a;
+    --scrim: rgba(11, 13, 16, 0.82);
+    --backdrop: rgba(0, 0, 0, 0.78);
+    --radius: 10px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f6f7f9;
+      --surface: #ffffff;
+      --raised: #eef0f3;
+      --border: rgba(15, 23, 42, 0.09);
+      --border-strong: rgba(15, 23, 42, 0.2);
+      --text: #14171c;
+      --muted: #5b6370;
+      --faint: #8a919c;
+      --live: #1a7f37;
+      --down: #cf222e;
+      --changed: #9a6700;
+      --scrim: rgba(246, 247, 249, 0.88);
+      --backdrop: rgba(15, 23, 42, 0.55);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.45 "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .num { font-variant-numeric: tabular-nums; }
+  .hidden { display: none !important; }
+
+  /* Top bar */
+  .bar { display: flex; align-items: center; gap: 18px; height: 52px; padding: 0 24px; border-bottom: 1px solid var(--border);
+         background: var(--surface); }
+  .brand { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+  .context { display: flex; gap: 16px; color: var(--muted); font-size: 13px; }
+  .context b { color: var(--text); font-weight: 500; }
+  .privacy { margin-left: auto; color: var(--muted); font-size: 12px; }
+  .status { display: inline-flex; align-items: center; gap: 8px; height: 28px; padding: 0 12px;
+            border: 1px solid var(--border); border-radius: 999px; font-size: 12px; font-weight: 500; color: var(--muted); }
+  .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+  .status.live { color: var(--text); }
+  .status.live::before { background: var(--live); }
+  .status.down::before { background: var(--down); }
+
+  /* One screen: the picture on the left, the lists on the right. Only the lists scroll. */
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 20px; padding: 20px 24px; min-height: 0; }
+  .primary, .secondary { display: flex; flex-direction: column; gap: 16px; min-width: 0; min-height: 0; }
+
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+  .panel-head { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 16px; border-bottom: 1px solid var(--border); }
+  .panel-head h2 { margin: 0; font-size: 13px; font-weight: 600; }
+  .panel-head .count { color: var(--faint); font-size: 13px; }
+  .empty { padding: 20px 16px; color: var(--faint); font-size: 13px; text-align: center; }
+
+  /* Picture */
+  .stage { position: relative; flex: 1; min-height: 0; margin: 0; background: #000; border-radius: var(--radius); overflow: hidden; }
+  .stage img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; }
+  .overlay { position: absolute; inset: 0; display: none; flex-direction: column; gap: 4px; align-items: center;
+             justify-content: center; background: var(--scrim); }
+  .overlay.show { display: flex; }
+  .overlay strong { font-size: 15px; font-weight: 600; }
+  .overlay span { color: var(--muted); font-size: 13px; }
+
+  /* Figures */
+  .stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 0; flex: none; }
+  .stat { padding: 12px 18px; border-left: 1px solid var(--border); min-width: 0; }
+  .stat:first-child { border-left: 0; }
+  .stat dt { color: var(--muted); font-size: 12px; font-weight: 500; }
+  .stat dd { margin: 2px 0 0; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; white-space: nowrap; }
+  .stat dd small { margin-left: 3px; color: var(--muted); font-size: 13px; font-weight: 500; letter-spacing: 0; }
+  .stat .note { color: var(--faint); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stat.corrections dd, .stat.corrections .note b { color: var(--changed); }
+  .stat.corrections .note b { font-weight: 600; }
+  .stat.flash { animation: flash 1.6s ease-out; }
+  @keyframes flash { from { background: color-mix(in srgb, var(--changed) 22%, transparent); } to { background: transparent; } }
+
+  /* Labels */
+  .label { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; }
+  .label::before { content: ""; width: 9px; height: 9px; border-radius: 2px; background: var(--c); flex: none;
+                   box-shadow: inset 0 0 0 1px var(--border-strong); }
+  .changed { color: var(--changed); font-size: 12px; }
+  .meta { color: var(--faint); font-size: 12px; }
+
+  /* Objects */
+  .objects { flex: none; max-height: 34%; display: flex; flex-direction: column; }
+  .objects .scroll { overflow-y: auto; padding: 0 16px 6px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { position: sticky; top: 0; padding: 8px 0 6px; background: var(--surface); color: var(--faint); font-size: 12px;
+       font-weight: 500; text-align: right; }
+  td { padding: 5px 0; border-top: 1px solid var(--border); text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  td.strong { font-weight: 600; }
+  td.zero { color: var(--faint); }
+
+  /* Detections: one row for each object; the VLM answer fills it in */
+  .detections { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .segmented { margin-left: auto; display: inline-flex; padding: 2px; background: var(--bg); border: 1px solid var(--border); border-radius: 7px; }
+  .segmented button { height: 24px; padding: 0 10px; border: 0; border-radius: 5px; background: none; color: var(--muted);
+                      font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; }
+  .segmented button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: 0 0 0 1px var(--border); }
+  .clear { margin-left: 8px; height: 30px; padding: 0 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg);
+           color: var(--muted); font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; }
+  .clear:hover { color: var(--text); }
+  .events { list-style: none; margin: 0; padding: 4px; overflow-y: auto; flex: 1; min-height: 0; }
+  .events li { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 12px; align-items: center;
+               padding: 8px; border-radius: 8px; cursor: pointer; }
+  .events li + li { margin-top: 2px; }
+  .events li:hover, .events li:focus-visible { background: var(--raised); outline: none; }
+  .events.described-only li.waiting { display: none; }
+  .events.corrected-only li:not(.corrected) { display: none; }
+  .events li.corrected { box-shadow: inset 3px 0 0 var(--changed); }
+  .thumb { position: relative; width: 96px; aspect-ratio: 4 / 3; border-radius: 5px; background: #000; overflow: hidden; }
+  .thumb img { position: absolute; max-width: none; display: block; }
+  .what { min-width: 0; }
+  .what .top { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; }
+  .what .top .changed { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .what .top time { margin-left: auto; color: var(--faint); font-size: 12px; flex: none; }
+  .what p { margin: 2px 0 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .what p.pending { color: var(--faint); }
+
+  /* Frame viewer */
+  dialog { width: min(1180px, 94vw); padding: 0; background: var(--surface); color: var(--text);
+           border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  dialog::backdrop { background: var(--backdrop); }
+  dialog img { width: 100%; max-height: calc(100vh - 150px); object-fit: contain; display: block; background: #000; }
+  .dialog-foot { display: flex; align-items: center; gap: 16px; padding: 14px 18px; }
+  .dialog-foot .what { flex: 1; }
+  .close { height: 32px; padding: 0 14px; border: 1px solid var(--border); border-radius: 7px; background: var(--raised);
+           color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+  .close:hover { border-color: var(--border-strong); }
+
+  .events::-webkit-scrollbar, .objects .scroll::-webkit-scrollbar { width: 10px; }
+  .events::-webkit-scrollbar-thumb, .objects .scroll::-webkit-scrollbar-thumb { background: var(--raised); border: 3px solid var(--surface); border-radius: 999px; }
+
+  /* A narrow window scrolls as one page instead. */
+  @media (max-width: 1100px) {
+    body { display: block; height: auto; }
+    .layout { grid-template-columns: 1fr; }
+    .stage { flex: none; aspect-ratio: 16 / 9; }
+    .objects { max-height: none; }
+    .events { max-height: 480px; }
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .stat:nth-child(odd) { border-left: 0; }
+    .stat:nth-child(n + 3) { border-top: 1px solid var(--border); }
+    .privacy, .context { display: none; }
+  }
+</style>
+</head>
+<body>
+<header class="bar">
+  <div class="brand">AI on the edge</div>
+  <div class="context">
+    <span>Device <b id="f-dev">&ndash;</b></span>
+    <span>VLM <b id="f-vlm">&ndash;</b></span>
+  </div>
+  <span class="privacy">All analysis runs on the device. No picture leaves this network.</span>
+  <div class="status" id="status">Connecting</div>
+</header>
+
+<main class="layout">
+  <div class="primary">
+    <figure class="stage">
+      <img id="view" src="/stream" alt="Annotated camera picture from the device" />
+      <div class="overlay" id="overlay"><strong>Waiting for the device</strong><span>The picture starts when the device answers.</span></div>
+    </figure>
+
+    <dl class="stats panel">
+      <div class="stat"><dt>Detector</dt><dd class="num" id="m-ms">&ndash;</dd><div class="note" id="m-ms-note">&nbsp;</div></div>
+      <div class="stat"><dt>Frame rate</dt><dd class="num" id="m-fps">&ndash;</dd><div class="note">analysed on the device</div></div>
+      <div class="stat"><dt>In view</dt><dd class="num" id="m-view">&ndash;</dd><div class="note" id="m-view-note">&nbsp;</div></div>
+      <div class="stat"><dt>VLM answers</dt><dd class="num" id="m-vlm">&ndash;</dd><div class="note" id="m-vlm-note">&nbsp;</div></div>
+      <div class="stat corrections" id="m-fix-card"><dt>Corrections</dt><dd class="num" id="m-fix">&ndash;</dd><div class="note" id="m-fix-note">&nbsp;</div></div>
+    </dl>
+  </div>
+
+  <aside class="secondary">
+    <section class="panel objects">
+      <div class="panel-head"><h2>Objects</h2><span class="count num" id="objects-total"></span></div>
+      <div class="scroll">
+        <table class="num">
+          <thead><tr><th>Class</th><th>In view</th><th>Since start</th></tr></thead>
+          <tbody id="objects"></tbody>
+        </table>
+        <div class="empty" id="objects-empty">Nothing seen yet</div>
+      </div>
+    </section>
+
+    <section class="panel detections">
+      <div class="panel-head">
+        <h2>Detections</h2><span class="count num" id="event-count"></span>
+        <div class="segmented" role="group" aria-label="Filter the detections">
+          <button type="button" data-filter="all" aria-pressed="true">All</button>
+          <button type="button" data-filter="described" aria-pressed="false">Described</button>
+          <button type="button" data-filter="corrected" aria-pressed="false">Corrected</button>
+        </div>
+        <button type="button" class="clear" id="clear-history">Clear</button>
+      </div>
+      <ul class="events" id="events"></ul>
+      <div class="empty" id="events-empty">Nothing detected yet</div>
+    </section>
+  </aside>
+</main>
+
+<dialog id="event-dialog" aria-label="Detection frame">
+  <img id="event-frame" alt="The preview frame at the time of the detection" />
+  <div class="dialog-foot">
+    <div class="what" id="event-meta"></div>
+    <button type="button" class="close" id="event-close">Close</button>
+  </div>
+</dialog>
+
+<script>
+const el = (id) => document.getElementById(id);
+
+// Must give the same colour as colour_for() in camera_processor/annotate.py: crc32 hue, HSV 0.75/0.95.
+const CRC_TABLE = Uint32Array.from({ length: 256 }, (_, n) => {
+  for (let k = 0; k < 8; k++) n = n & 1 ? 0xedb88320 ^ (n >>> 1) : n >>> 1;
+  return n >>> 0;
+});
+
+function crc32(text) {
+  let c = 0xffffffff;
+  for (const byte of new TextEncoder().encode(text)) c = CRC_TABLE[(c ^ byte) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+function colourFor(label) {
+  const h = (crc32(label) % 360) / 360, s = 0.75, v = 0.95;
+  const i = Math.floor(h * 6), f = h * 6 - i;
+  const p = v * (1 - s), q = v * (1 - s * f), t = v * (1 - s * (1 - f));
+  const [r, g, b] = [[v, t, p], [q, v, p], [p, v, t], [p, q, v], [t, p, v], [v, p, q]][i % 6];
+  return `rgb(${Math.trunc(r * 255)} ${Math.trunc(g * 255)} ${Math.trunc(b * 255)})`;
+}
+
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
+const label = (name) => `<span class="label" style="--c:${colourFor(name)}">${escapeHtml(name)}</span>`;
+const changed = (from, to) => (from && from !== to ? `<span class="changed" title="The detector said ${escapeHtml(from)}">was ${escapeHtml(from)}</span>` : "");
+const clock = (seconds) => new Date(seconds * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+let corrections = null;
+
+function setStatus(state, text) {
+  el("status").className = `status ${state}`;
+  el("status").textContent = text;
+  el("overlay").classList.toggle("show", state !== "live");
+}
+
+function render(s) {
+  followDevice(s.session);
+  const inView = s.in_view || {};
+  const seen = s.seen || {};
+  const judge = s.judge || {};
+  const provider = s.provider === "CUDA" ? "GPU" : s.provider;
+  const total = Object.values(inView).reduce((a, b) => a + b, 0);
+  const classes = Object.keys(inView).length;
+
+  el("m-ms").innerHTML = `${Number(s.detector_ms).toFixed(0)}<small>ms</small>`;
+  el("m-ms-note").textContent = `${s.detector} on the ${provider}`;
+  el("m-fps").innerHTML = `${Number(s.fps).toFixed(1)}<small>fps</small>`;
+  el("m-view").textContent = total;
+  el("m-view-note").textContent = `${classes} ${classes === 1 ? "class" : "classes"}`;
+  el("m-vlm").innerHTML = judge.ready ? judge.answered : "<small>loading</small>";
+  el("m-vlm-note").textContent = judge.ms_p50 ? `${(judge.ms_p50 / 1000).toFixed(1)} s each, median` : "the model is loading";
+
+  const fixed = judge.corrected ?? 0, last = s.last_correction;
+  el("m-fix").textContent = judge.ready ? fixed : "\u2013";
+  el("m-fix-note").innerHTML = last
+    ? `${escapeHtml(last.detector)} &rarr; <b>${escapeHtml(last.label)}</b>`
+    : "detector labels the VLM changed";
+  // Flash on a new correction, but not on the first poll after the page opens.
+  if (corrections !== null && fixed > corrections) {
+    const card = el("m-fix-card");
+    card.classList.remove("flash");
+    void card.offsetWidth;
+    card.classList.add("flash");
+  }
+  corrections = fixed;
+
+  const names = [...new Set([...Object.keys(inView), ...Object.keys(seen)])]
+    .sort((a, b) => (inView[b] || 0) - (inView[a] || 0) || (seen[b] || 0) - (seen[a] || 0) || a.localeCompare(b));
+  el("objects").innerHTML = names
+    .map((n) => `<tr><td>${label(n)}</td><td class="${inView[n] ? "strong" : "zero"}">${inView[n] || 0}</td><td>${seen[n] || 0}</td></tr>`)
+    .join("");
+  el("objects-empty").classList.toggle("hidden", names.length > 0);
+  const sinceStart = Object.values(seen).reduce((a, b) => a + b, 0);
+  el("objects-total").textContent = sinceStart ? `${sinceStart} since start` : "";
+
+  el("f-vlm").textContent = s.vlm;
+  el("f-dev").textContent = s.device_id;
+
+  // Rows without an answer show what is happening to their object now.
+  const waiting = s.waiting;
+  for (const o of waiting ? objects.values() : []) {
+    if (o.verdict || o.gone) continue;
+    const status = (o.seen.session === s.session && waiting[o.seen.track_id]) || "out";
+    if (status !== o.status) {
+      o.status = status;
+      drawObject(o);
+    }
+  }
+}
+
+async function poll() {
+  try {
+    const response = await fetch("/state", { cache: "no-store" });
+    if (!response.ok) throw new Error(response.status);
+    render(await response.json());
+    setStatus("live", "Live");
+  } catch {
+    setStatus("down", "Device unreachable");
+  }
+  setTimeout(poll, 500);
+}
+
+el("view").addEventListener("error", () => setTimeout(() => { el("view").src = `/stream?${Date.now()}`; }, 2000));
+poll();
+
+// One entry for each object: its first sighting, then the VLM answer when it comes.
+const objects = new Map();
+let lastEvent = 0;
+let viewerSession = null;
+let deviceSession = null;
+
+function clearRows() {
+  objects.clear();
+  el("events").replaceChildren();
+  el("event-count").textContent = "";
+  el("events-empty").classList.remove("hidden");
+}
+
+// A restarted device counts from zero again, so its old detections go with the old counts.
+function followDevice(session) {
+  if (!session || session === deviceSession) return;
+  if (deviceSession !== null) clearRows();
+  deviceSession = session;
+}
+
+// A restarted viewer numbers its history from 1 again, and its picture stream ended.
+function startAgain() {
+  clearRows();
+  lastEvent = 0;
+  deviceSession = null;
+  el("view").src = `/stream?${Date.now()}`;
+}
+
+// Why an object was never described, by the device's reason code.
+const NOT_DESCRIBED = {
+  small: "Too small for the VLM",
+  loading: "The VLM was still loading",
+  failed: "The VLM failed on it twice",
+  full: "Left, and too many objects were waiting",
+};
+
+// The live state of an undescribed object, from /state.
+const WAITING = {
+  small: "Too small for the VLM",
+  edge: "Only part in view. The VLM waits up to 2 s for a whole view",
+  busy: "Waiting for the VLM",
+  queued: "Left. Its best view waits for the VLM",
+  asking: "The VLM is looking at it",
+  loading: "The VLM is loading",
+  failed: "The VLM failed on it twice",
+  out: "Out of view",
+};
+
+function describe(o) {
+  if (o.verdict) {
+    const text = o.verdict.description ? escapeHtml(o.verdict.description) : '<span class="meta">No description</span>';
+    return { text, pending: false };
+  }
+  if (o.gone) return { text: NOT_DESCRIBED[o.gone.description] || "Not described", pending: true };
+  return { text: WAITING[o.status] || "No description yet", pending: true };
+}
+
+function summary(o) {
+  const latest = o.verdict || o.seen;
+  const { text, pending } = describe(o);
+  return `<div class="top">${label(latest.label)}<span class="meta num">#${latest.track_id}</span>`
+    + `${changed(latest.detector_label, latest.label)}<time class="num">${clock(o.seen.at)}</time></div>`
+    + `<p class="${pending ? "pending" : ""}">${text}</p>`;
+}
+
+// The frame is the whole scene, so zoom the 4:3 thumbnail onto the object's box with a margin.
+function thumbnail(e) {
+  if (!e.frame) return '<div class="thumb"></div>';
+  const [x1, y1, x2, y2] = e.box || [0, 0, 1, 1];
+  const frameAspect = 16 / 9, thumbAspect = 4 / 3;
+  const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+  // The visible part of the frame, as fractions, with the box filling about 70 % of it.
+  let w = Math.min(1, Math.max((x2 - x1) / 0.7, ((y2 - y1) / 0.7) * thumbAspect / frameAspect, 0.15));
+  let h = (w * frameAspect) / thumbAspect;
+  if (h > 1) { h = 1; w = thumbAspect / frameAspect; }
+  const left = Math.min(Math.max(cx - w / 2, 0), 1 - w), top = Math.min(Math.max(cy - h / 2, 0), 1 - h);
+  const style = `width:${100 / w}%;height:${100 / h}%;left:${-left / w * 100}%;top:${-top / h * 100}%`;
+  return `<div class="thumb"><img loading="lazy" src="/history/${e.id}.jpg" alt="" style="${style}" /></div>`;
+}
+
+function drawObject(o) {
+  const frame = (o.verdict && o.verdict.frame) ? o.verdict : o.seen;
+  o.row.className = o.verdict ? "described" : "waiting";
+  if (o.verdict && o.verdict.label !== o.verdict.detector_label) o.row.classList.add("corrected");
+  o.row.innerHTML = thumbnail(frame) + `<div class="what">${summary(o)}</div>`;
+}
+
+function addEvent(e) {
+  followDevice(e.session);
+  const key = `${e.session}/${e.track_id}`;
+  let o = objects.get(key);
+  if (!o && e.kind === "gone") return;  // It appeared before this viewer started.
+  if (!o) {
+    o = { key, seen: e, verdict: null, gone: null, row: document.createElement("li") };
+    o.row.tabIndex = 0;
+    o.row.dataset.key = key;
+    objects.set(key, o);
+    el("events").prepend(o.row);
+  }
+  if (e.kind === "verdict") o.verdict = e;
+  if (e.kind === "gone") o.gone = e;
+  drawObject(o);
+}
+
+function showObject(key) {
+  const o = objects.get(key);
+  if (!o) return;
+  const frame = (o.verdict && o.verdict.frame) ? o.verdict : o.seen;
+  const img = el("event-frame");
+  img.classList.toggle("hidden", !frame.frame);
+  if (frame.frame) img.src = `/history/${frame.id}.jpg`;
+  else img.removeAttribute("src");
+  el("event-meta").innerHTML = summary(o)
+    + `<p class="meta">${frame === o.verdict ? "The view the VLM was given" : "First seen"}, ${clock(frame.at)}</p>`;
+  el("event-dialog").showModal();
+}
+
+async function pollHistory() {
+  try {
+    const response = await fetch(`/history?after=${lastEvent}`, { cache: "no-store" });
+    const session = response.headers.get("X-Viewer-Session");
+    if (response.ok && viewerSession !== null && session !== viewerSession) {
+      startAgain();
+      viewerSession = session;
+      setTimeout(pollHistory, 0);
+      return;
+    }
+    viewerSession = session;
+    if (response.ok) {
+      for (const e of await response.json()) {
+        if (e.id <= lastEvent) continue;  // Cleared while this request was out.
+        addEvent(e);
+        lastEvent = e.id;
+      }
+      const keys = [...objects.keys()];
+      for (const key of keys.slice(0, Math.max(0, keys.length - 500))) {
+        objects.get(key).row.remove();
+        objects.delete(key);
+      }
+      el("event-count").textContent = objects.size || "";
+      el("events-empty").classList.toggle("hidden", objects.size > 0);
+    }
+  } catch {
+    // The state poll already shows that the device is unreachable.
+  }
+  setTimeout(pollHistory, 1000);
+}
+
+const openFrom = (ev) => {
+  const li = ev.target.closest("li[data-key]");
+  if (li && (ev.type === "click" || ev.key === "Enter")) showObject(li.dataset.key);
+};
+el("events").addEventListener("click", openFrom);
+el("events").addEventListener("keydown", openFrom);
+document.querySelectorAll(".segmented button").forEach((button) => button.addEventListener("click", () => {
+  document.querySelectorAll(".segmented button").forEach((b) => b.setAttribute("aria-pressed", String(b === button)));
+  el("events").classList.toggle("described-only", button.dataset.filter === "described");
+  el("events").classList.toggle("corrected-only", button.dataset.filter === "corrected");
+}));
+el("event-close").addEventListener("click", () => el("event-dialog").close());
+el("event-dialog").addEventListener("click", (ev) => { if (ev.target === el("event-dialog")) el("event-dialog").close(); });
+el("clear-history").addEventListener("click", async () => {
+  const response = await fetch("/history/clear", { method: "POST", headers: { "X-Viewer-Session": viewerSession || "" } });
+  if (!response.ok) return;
+  lastEvent = Math.max(lastEvent, (await response.json()).last);
+  clearRows();
+});
+pollHistory();
+</script>
+</body>
+</html>

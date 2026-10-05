@@ -1,0 +1,42 @@
+[project]
+name = "camera-processor"
+version = "0.3.0"
+description = "Detects, tracks and counts with RF-DETR on the device, and asks a local VLM to describe what it sees"
+requires-python = ">=3.10"
+# numpy and requests come with the NVIDIA base image. trackers needs PyPI's
+# opencv-python, which replaces the base image's OpenCV; see the Dockerfile.
+dependencies = [
+    "numpy==2.2.6",
+    "opencv-python==4.12.0.88",
+    "supervision==0.30.6",
+    "trackers==2.6.1",
+    "requests==2.32.5",
+    "onnxruntime-gpu==1.24.0",
+    "azure-iot-device==2.14.0",
+]
+
+[dependency-groups]
+# The export stage of the image build. CPU PyTorch, from the PyTorch index.
+export-torch = ["torch==2.14.1", "torchvision==0.29.1"]
+export = ["rfdetr[onnx]==1.11.1"]
+# CPU ONNX Runtime: detector.py imports it, and the tests never load a model. 1.23.2
+# is its last release for Python 3.10, the device's Python.
+# opencv-python needs libGL: on a Linux server, apt-get install libgl1 libglib2.0-0.
+test = [
+    "pytest==9.1.1", "numpy==2.2.6", "opencv-python==4.12.0.88", "supervision==0.30.6", "trackers==2.6.1",
+    "onnxruntime==1.23.2", "requests==2.32.5",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
